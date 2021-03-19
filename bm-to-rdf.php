@@ -6,16 +6,23 @@
  * Kerameikos.org properties
  */
 
+include 'object-to-rdf.php';
+
 $data = generate_json('https://docs.google.com/spreadsheets/d/e/2PACX-1vRfJLFmk2LVER7T7xJPtYgLGbywE7kL0Bv5_WWChP6EQhOq_h7c20kloORsnfpAoe0kmTCeAIeBI0Hd/pub?output=csv');
+$roles = generate_json('https://docs.google.com/spreadsheets/d/e/2PACX-1vRSbflL8axsyjaq4MTR6VoLsOleJOjaw1cbUbSYV7mmmVc7a2JLQnoHFuIfCi_t8c5M2SU1hFvmzI0b/pub?output=csv');
 
 $records = array();
+$places = array();
 
 foreach($data as $row){
     //only include objects with a shape URI (baseline requirement)
     if (strlen($row['Shape URI']) > 0 && $row['Object type uncertain'] != 'TRUE'){
         $record = array();
         
-        $title = $row['Reg number'];
+        $title = $row['Object type'];
+        $title .= (strlen($row['Person 1']) > 0 ? ' ' . $row['Person1 attr'] . ' ' . $row['Person 1'] : '');
+        $title .= (strlen($row['Person 2']) > 0 ? ' and ' . $row['Person2 attr'] . ' ' . $row['Person 2'] : '');
+        $title .= ' (' . $row['Reg number'] . ')';
         
         $record['uri'] = $row['ID'];
         $record['title'] = $title;
@@ -57,11 +64,143 @@ foreach($data as $row){
         //production
         $record['production'] = array();
         
-        if (is_numeric($row['Production Start']) && is_numeric($row['Production End'])){
-                        
+        //time span
+        if (is_numeric($row['Production Start']) && is_numeric($row['Production End'])){                        
             $record['production']['begin'] = number_pad($row['Production Start'], 4);
             $record['production']['end'] = number_pad($row['Production End'], 4);
         }
+        
+        //places
+        if ($row['Production place uncertain'] != 'TRUE'){
+            if (strlen($row['Place1 URI']) > 0){
+                $record['production']['place'][] = $row['Place1 URI'];
+            }
+            if (strlen($row['Place2 URI']) > 0){
+                $record['production']['place'][] = $row['Place2 URI'];
+            }
+        }
+        
+        //people
+        if ($row['Person1 uncertain'] != 'TRUE'){
+            $uri = $row['Person1 URI'];
+            if (strlen($uri) > 0){
+                $attr = $row['Person1 attr'];
+                $artist = array();
+                
+                foreach ($roles as $role){
+                    if ($role['label'] == $attr){
+                        //evaluate a direct or influential link
+                        if ($role['certainty note'] == 'influenced_by'){
+                            $artist['type'] = 'crm:E21_Person';
+                            $artist['label'] = $attr . ' ' . $row['Person 1'];
+                            $artist['influenced_by'] = $uri;
+                        } elseif ($role['certainty note'] == 'group influenced_by') {
+                            $artist['type'] = 'crm:E74_Group';
+                            $artist['label'] = $attr . ' ' . $row['Person 1'];
+                            $artist['influenced_by'] = $uri;
+                        } else {
+                            $artist['uri'] = $uri;
+                        }
+                        
+                        break;
+                    }
+                }
+                $record['production']['carried_out_by'][$uri] = $artist;                
+            }
+        }
+        
+        if ($row['Person2 uncertain'] != 'TRUE'){
+            $uri = $row['Person2 URI'];
+            if (strlen($row['Person2 URI']) > 0){
+                $attr = $row['Person2 attr'];
+                $artist = array();
+                
+                foreach ($roles as $role){
+                    if ($role['label'] == $attr){
+                        //evaluate a direct or influential link
+                        if ($role['certainty note'] == 'influenced_by'){
+                            $artist['type'] = 'crm:E21_Person';
+                            $artist['label'] = $attr . ' ' . $row['Person 2'];
+                            $artist['influenced_by'] = $uri;
+                        } elseif ($role['certainty note'] == 'group influenced_by') {
+                            $artist['type'] = 'crm:E74_Group';
+                            $artist['label'] = $attr . ' ' . $row['Person 2'];
+                            $artist['influenced_by'] = $uri;
+                        } else {
+                            $artist['uri'] = $uri;
+                        }
+                        
+                        break;
+                    }
+                }
+                $record['production']['carried_out_by'][$uri] = $artist;
+            }
+        }
+        if ($row['Person3 uncertain'] != 'TRUE'){
+            $uri = $row['Person3 URI'];
+            if (strlen($uri) > 0){
+                $attr = $row['Person3 attr'];
+                $artist = array();
+                
+                foreach ($roles as $role){
+                    if ($role['label'] == $attr){
+                        //evaluate a direct or influential link
+                        if ($role['certainty note'] == 'influenced_by'){
+                            $artist['type'] = 'crm:E21_Person';
+                            $artist['label'] = $attr . ' ' . $row['Person 3'];
+                            $artist['influenced_by'] = $uri;
+                        } elseif ($role['certainty note'] == 'group influenced_by') {
+                            $artist['type'] = 'crm:E74_Group';
+                            $artist['label'] = $attr . ' ' . $row['Person 3'];
+                            $artist['influenced_by'] = $uri;
+                        } else {
+                            $artist['uri'] = $uri;
+                        }
+                        
+                        break;
+                    }
+                }
+                $record['production']['carried_out_by'][$uri] = $artist;                
+            }
+        }
+        
+        //periods
+        if (strlen($row['Period1 URI']) > 0){
+            $record['production']['period'][] = $row['Period1 URI'];
+        }
+        
+        if (strlen($row['Period2 URI']) > 0){
+            $record['production']['period'][] = $row['Period2 URI'];
+        }
+        
+        if (strlen($row['Period3 URI']) > 0){
+            $record['production']['period'][] = $row['Period3 URI'];
+        }        
+        //end production
+        
+        //findspot
+        if ($row['Findspot uncertain'] != 'TRUE' && strlen($row['Gazetteer URI']) > 0){
+            $record['findspot']['label'] = $row['Find spot 1'];
+            $record['findspot']['uri'] = $row['Gazetteer URI'];
+            
+            //perform iterative place lookup on the Wikidata SPARQL endpoint
+            if (!array_key_exists($row['Gazetteer URI'], $places)){
+                echo "Processing {$row['Gazetteer URI']}\n";
+                $place = query_wikidata($row['Gazetteer URI']);
+                
+                if (isset($place['uri'])){
+                    $places[$place['uri']] = $place;                    
+                }
+            }
+        }
+        
+        if (strlen($row['Image']) > 0){
+            $pieces = explode('/', $row['Image']);
+            $filename = str_replace('.jpg', '.ptif', str_replace('preview_', '', $pieces[9]));
+            $record['images'][] = array("uri"=>"https://media.britishmuseum.org/iiif/Repository/Documents/{$pieces[6]}/{$pieces[7]}/{$pieces[8]}/{$filename}", "type"=>"iiif");
+        }
+        
+        $record['dataset'] = 'https://www.britishmuseum.org/';
         
         $records[] = $record;
     }
@@ -69,122 +208,103 @@ foreach($data as $row){
 
 
 //output RDF from parsed data object
-object_to_rdf($records);
-
-
-
+object_to_rdf('bm', $records, $places);
 
 /***** FUNCTIONS *****/
-function object_to_rdf ($records){
-    $writer = new XMLWriter();
-    //$writer->openURI("{$collection}-{$project}.rdf");
-    $writer->openURI('php://output');
-    $writer->startDocument('1.0','UTF-8');
-    $writer->setIndent(true);
-    //now we need to define our Indent string,which is basically how many blank spaces we want to have for the indent
-    $writer->setIndentString("    ");
+function parse_sparql_response($xml){
+    GLOBAL $places;
     
-    $writer->startElement('rdf:RDF');
-    $writer->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema#');
-    $writer->writeAttribute('xmlns:crm', "http://www.cidoc-crm.org/cidoc-crm/");
-    $writer->writeAttribute('xmlns:crmgeo', "http://www.ics.forth.gr/isl/CRMgeo/");
-    $writer->writeAttribute('xmlns:crmsci', "http://www.ics.forth.gr/isl/CRMsci");
-    $writer->writeAttribute('xmlns:kon', "http://kerameikos.org/ontology#");
-    $writer->writeAttribute('xmlns:dcterms', "http://purl.org/dc/terms/");
-    $writer->writeAttribute('xmlns:foaf', "http://xmlns.com/foaf/0.1/");
-    $writer->writeAttribute('xmlns:geo', "http://www.w3.org/2003/01/geo/wgs84_pos#");
-    $writer->writeAttribute('xmlns:rdf', "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
-    $writer->writeAttribute('xmlns:void', "http://rdfs.org/ns/void#");
+    $place = array('uri'=>null, 'closeMatch'=>array(), 'parent'=>array());
     
-    //iterate through records    
-    foreach ($records as $record){
-        $writer->startElement('crm:E22_Man-Made_Object');
-            $writer->writeAttribute('rdf:about', $record['uri']);
-        
-            //title
-            $writer->startElement('rm:P1_is_identified_by');
-                $writer->startElement('crm:E33_E41_Linguistic_Appellation');
-                    $writer->writeElement('crm:P190_has_symbolic_content', $record['title']);
-                    $writer->startElement('crm:P2_has_type');
-                        $writer->writeAttribute('rdf:resource', 'http://vocab.getty.edu/aat/300404670');
-                    $writer->endElement();
-                $writer->endElement();
-            $writer->endElement();
-            
-            //accession
-            $writer->startElement('rm:P1_is_identified_by');
-                $writer->startElement('crm:E33_E41_Linguistic_Appellation');
-                    $writer->writeElement('crm:P190_has_symbolic_content', $record['accession']);
-                    $writer->startElement('crm:P2_has_type');
-                        $writer->writeAttribute('rdf:resource', 'http://vocab.getty.edu/aat/300312355');
-                    $writer->endElement();
-                $writer->endElement();
-            $writer->endElement();
-            
-            $writer->startElement('crm:P50_has_current_keeper');
-                $writer->writeAttribute('rdf:resource', $record['collection']);
-            $writer->endElement();
-            
-            //typological attributes
-            $writer->startElement('kon:hasShape');
-                $writer->writeAttribute('rdf:resource', $record['shape']);
-            $writer->endElement();
-            
-            if (array_key_exists('materials', $record)){
-                foreach($record['materials'] as $uri){
-                    $writer->startElement('crm:P45_consists_ofcrm:P45_consists_of');
-                        $writer->writeAttribute('rdf:resource', $uri);
-                    $writer->endElement();
-                }
-            }
-            
-            if (array_key_exists('techniques', $record)){
-                foreach($record['techniques'] as $uri){
-                    $writer->startElement('crm:P32_used_general_technique');
-                        $writer->writeAttribute('rdf:resource', $uri);
-                    $writer->endElement();
-                }
-            }
-            
-            //production
-            if (array_key_exists('production', $record)){
-                $writer->startElement('crm:P108i_was_produced_by');
-                    $writer->startElement('crm:E12_Production');
+    $xmlDoc = new DOMDocument();
+    $xmlDoc->loadXML($xml);
+    $xpath = new DOMXpath($xmlDoc);
+    $xpath->registerNamespace('res', 'http://www.w3.org/2005/sparql-results#');
+    
+    $results = $xpath->query("//res:result");
+    
+    foreach ($results as $result){
+        foreach ($result->getElementsByTagNameNS('http://www.w3.org/2005/sparql-results#', 'binding') as $binding){
+            if ($binding->getAttribute('name') == 'place'){
+                $uri = $binding->getElementsByTagNameNS('http://www.w3.org/2005/sparql-results#', 'uri')->item(0)->nodeValue;
+                
+                $place['uri'] = $uri;
+            } elseif ($binding->getAttribute('name') == 'placeLabel'){
+                $place['label'] = $binding->getElementsByTagNameNS('http://www.w3.org/2005/sparql-results#', 'literal')->item(0)->nodeValue;
+            } elseif ($binding->getAttribute('name') == 'coord'){
+                //attach coordinates for the ordnance survey lookups only
+                $coord = $binding->getElementsByTagNameNS('http://www.w3.org/2005/sparql-results#', 'literal')->item(0)->nodeValue;
+                
+                $place['wkt'] = $coord;
+                
+                //parse WKT into lat/long
+                $pieces = explode(' ', str_replace('Point(', '', str_replace(')', '', $coord)));
+                
+                $place['lat'] = $pieces[1];
+                $place['lon'] = $pieces[0];
+                
+            } elseif ($binding->getAttribute('name') == 'parent'){
+                $parentURI = $binding->getElementsByTagNameNS('http://www.w3.org/2005/sparql-results#', 'uri')->item(0)->nodeValue;
+                if (!in_array($parentURI, $place['parent'])){
+                    $place['parent'][] = $parentURI;
                     
-                    //date range
-                    if (array_key_exists('begin', $record['production']) && array_key_exists('end', $record['production'])){
-                        $writer->startElement('crm:P4_has_time-span');
-                            $writer->startElement('crm:E52_Time-Span');
-                                $writer->startElement('crm:P82a_begin_of_the_begin');
-                                    $writer->writeAttribute('rdf:datatype', 'http://www.w3.org/2001/XMLSchema#gYear');
-                                    $writer->text($record['production']['begin']);
-                                $writer->endElement();
-                                $writer->startElement('crm:P82b_end_of_the_end');
-                                    $writer->writeAttribute('rdf:datatype', 'http://www.w3.org/2001/XMLSchema#gYear');
-                                    $writer->text($record['production']['end']);
-                                $writer->endElement();
-                            $writer->endElement();
-                        $writer->endElement();
+                    //parse the hierarchy and add a new place if it doesn't exist already
+                    if (!array_key_exists($parentURI, $places)){
+                        $parent = query_wikidata($parentURI);
+                        $places[$parentURI] = $parent;
                     }
-                    
-                    //period
-                    
-                    //artists
-                                        
-                    $writer->endElement();
-                $writer->endElement();
+                }
+            } elseif ($binding->getAttribute('name') == 'parentLabel'){
+                //ignore this
+            } else {
+                $match = $binding->getElementsByTagNameNS('http://www.w3.org/2005/sparql-results#', 'uri')->item(0)->nodeValue;
+                if (!in_array($match, $place['closeMatch'])){
+                    $place['closeMatch'][] = $match;
+                }
             }
-        
-        //end HMO
-        $writer->endElement();
+        }
     }
     
-    //end RDF file
-    $writer->endElement();
-    $writer->flush();
-    
+    return $place;
 }
 
+function query_wikidata($uri){
+    $query = 'PREFIX bd:  <http://www.bigdata.com/rdf#>
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX wikibase:    <http://wikiba.se/ontology#>
+SELECT ?place ?placeLabel ?tgn ?geonames ?pleiades ?parent ?coord WHERE {
+  BIND (<%ID%> as ?place)
+  OPTIONAL {?place wdt:P1667 ?tgnid .
+  	BIND (uri(concat("http://vocab.getty.edu/tgn/", ?tgnid)) as ?tgn)}
+  OPTIONAL {?place wdt:P1566 ?geonamesid .
+  	BIND (uri(concat("https://sws.geonames.org/", ?geonamesid, "/")) as ?geonames)}
+  OPTIONAL {?place wdt:P1584 ?pleiadesid .
+  	BIND (uri(concat("https://pleiades.stoa.org/places/", ?pleiadesid)) as ?pleiades)}
+  OPTIONAL {?place wdt:P131 ?parent}
+  OPTIONAL {?place p:P625/ps:P625 ?coord}
+  SERVICE wikibase:label {
+	bd:serviceParam wikibase:language "en"
+  }
+}';
+    
+    $url = "https://query.wikidata.org/sparql?query=" . urlencode(str_replace('%ID%', $uri, $query));
+    
+    
+    $ch = curl_init($url);
+    #curl_setopt($ch, CURLOPT_HEADER, 1);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_USERAGENT, "PHP/Ethan Gruber" );
+    curl_setopt($ch, CURLOPT_HTTPHEADER,array (
+        "Accept: application/sparql-results+xml"
+    ));
+    
+    $output = curl_exec($ch);
+    $info = curl_getinfo($ch);
+    curl_close($ch);
+    
+    return parse_sparql_response($output);
+}
 
 
 function number_pad($number,$n) {
