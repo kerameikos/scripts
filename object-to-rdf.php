@@ -167,6 +167,44 @@ function object_to_rdf ($collection, $records, $places){
                 $writer->endElement();
             }
             
+            //measurements
+            if (array_key_exists('measurements', $record)){
+                foreach($record['measurements'] as $k=>$array){
+                    $writer->startElement('crm:P43_has_dimension');
+                        $writer->startElement('crm:E54_Dimension');
+                            switch($k){
+                                case 'depth': 
+                                    $type = 'http://vocab.getty.edu/aat/300072633';
+                                    break;
+                                case 'diameter':
+                                    $type = 'http://vocab.getty.edu/aat/300055624';
+                                    break;
+                                case 'height': 
+                                    $type = 'http://vocab.getty.edu/aat/300055644';
+                                    break;
+                                case 'width':
+                                    $type = 'http://vocab.getty.edu/aat/300055647';                                    
+                            }
+                        
+                            if (isset($type)){
+                                $writer->startElement('crm:P2_has_type');
+                                    $writer->writeAttribute('rdf:resource', $type);
+                                $writer->endElement();
+                            }
+                            
+                            $writer->writeElement('crm:P90_has_value', $array['value']);
+                            
+                            if ($array['units'] == 'cm'){
+                                $writer->startElement('crm:P91_has_unit');
+                                    $writer->writeAttribute('rdf:resource', 'http://vocab.getty.edu/aat/300379098');
+                                $writer->endElement();
+                            }
+                        
+                        $writer->endElement();
+                    $writer->endElement();
+                }
+            }
+            
             //images
             if (array_key_exists('images', $record)){
                 foreach ($record['images'] as $image) {
@@ -184,6 +222,19 @@ function object_to_rdf ($collection, $records, $places){
                         $writer->endElement();
                     $writer->endElement();
                 }    
+            }
+            
+            //IIIF Manifest
+            if (array_key_exists('manifest', $record)){
+                $writer->startElement('crm:P129i_is_subject_of');
+                    $writer->startElement('crm:E73_Information_Objectcrm:E73_Information_Object');
+                        $writer->writeAttribute('rdf:about', $record['manifest']);
+                        $writer->writeElement('dcterms:format', 'application/ld+json;profile="http://iiif.io/api/presentation/2/context.json"');
+                        $writer->startElement('dcterms:conformsTo');
+                            $writer->writeAttribute('rdf:resource', 'http://iiif.io/api/presentation');
+                        $writer->endElement();
+                    $writer->endElement();
+                $writer->endElement();
             }
             
             //void:inDataset
