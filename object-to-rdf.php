@@ -227,7 +227,7 @@ function object_to_rdf ($collection, $records, $places){
             //IIIF Manifest
             if (array_key_exists('manifest', $record)){
                 $writer->startElement('crm:P129i_is_subject_of');
-                    $writer->startElement('crm:E73_Information_Objectcrm:E73_Information_Object');
+                    $writer->startElement('crm:E73_Information_Object');
                         $writer->writeAttribute('rdf:about', $record['manifest']);
                         $writer->writeElement('dcterms:format', 'application/ld+json;profile="http://iiif.io/api/presentation/2/context.json"');
                         $writer->startElement('dcterms:conformsTo');
